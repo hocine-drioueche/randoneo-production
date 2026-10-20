@@ -9,3 +9,5 @@ langgraph-checkpoint-sqlite==3.1.0
 langchain-mcp-adapters==0.3.0
 chromadb==1.5.9
 openai==2.42.0
+streamlit==1.62.0
+python-dotenv>=1.2.2
