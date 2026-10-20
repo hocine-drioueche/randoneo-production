@@ -7,7 +7,7 @@
 
 **En une phrase :** Un assistant de support client pour Randoneo qui répond aux questions sur les commandes, les retours et les produits, en s'appuyant sur un serveur MCP (4 outils) et une validation humaine avant toute action irréversible.
 
-**URL de l'application :** *(à remplir à l'étape 7 — déploiement Streamlit Cloud)*
+**URL de l'application :** *https://randoneo-assistant-hocine.streamlit.app/*
 
 **Accès :** Mot de passe partagé — `app_password` dans les secrets de l'application.
 
