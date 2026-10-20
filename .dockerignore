@@ -1,0 +1,44 @@
+# Secrets (ne doivent JAMAIS entrer dans l'image)
+.env
+.env.local
+.streamlit/
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Données locales
+*.sqlite
+*.sqlite3
+randoneo_memory.sqlite
+demo_memory.sqlite
+
+# Git
+.git/
+.gitignore
+
+# Docs (inutiles dans l'image)
+*.md
+README.md
+RAPPORT.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier

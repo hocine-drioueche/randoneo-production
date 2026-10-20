@@ -99,6 +99,9 @@ Le contrôle `path_check` dans `evaluate.py` a bloqué `limite_02` : le cas où 
 
 Streamlit Community Cloud a été choisi pour la **gratuité** et l'**immédiateté** : pas de carte bancaire, secrets gérés, déploiement en quelques clics. Ce qu'elle ne donne pas : **pas de persistance** (la mémoire de conversation meurt au redémarrage), **pas de conteneur** (elle clone le dépôt et installe depuis `requirements.txt`), **pas de contrôle sur l'infrastructure**. Mon conteneur Docker reste **portable** : le jour où l'application demande un disque persistant, un réseau privé ou une région d'hébergement contractuelle, je change d'hébergeur sans réécriture — le déménagement coûte un `docker push`.
 
+**Le Dockerfile.** L'application est conteneurisable : le `Dockerfile` installe les dépendances, copie le code, crée un utilisateur non-root (`appuser`, uid 1000), et démarre Streamlit sur `0.0.0.0:7860`. Un `HEALTHCHECK` vérifie que l'application répond. Le `.dockerignore` exclut les secrets (`.env`, `.streamlit/`), les environnements virtuels, les fichiers locaux et la documentation. Streamlit Cloud n'exécute pas cette image — elle clone le dépôt et installe depuis `requirements.txt` — mais le conteneur reste ce qui rend l'application portable vers un autre hébergeur (Cloud Run, App Runner, Container Apps, etc.) : le déménagement coûte un `docker push`.
+
+
 **Que feriez-vous différemment pour un vrai service ?**
 
 1. **Persistance :** remplacer `InMemorySaver` par `PostgresSaver` pour que la mémoire survive aux redémarrages.
