@@ -1,81 +1,182 @@
-# Base de départ — l'assistant Randoneo à industrialiser
+# Assistant Randoneo — Industrialisation
 
-Cette archive contient un assistant de support **fonctionnel** : un agent ReAct dont toutes
-les capacités vivent dans un serveur MCP, une mémoire persistante par conversation, et une
-validation humaine sur l'action sensible. C'est le point de départ du projet, pour ceux qui
-n'ont pas de rendu fonctionnel du projet précédent ou qui préfèrent repartir d'une base saine.
+Ce projet est l'aboutissement du fil rouge Randoneo. Il part d'un assistant de support fonctionnel (agent ReAct + serveur MCP + mémoire + validation humaine) et y ajoute les **quatre couches d'industrialisation** demandées :
 
-Elle ne contient **aucune** des quatre couches que le projet demande d'ajouter : pas de suite
-d'évaluation, pas de garde-fou, pas d'interface, pas de déploiement. C'est ce qui reste à
-faire, et c'est ce qui est noté.
+1. Une suite d'évaluation (baseline vs hardened).
+2. Des garde-fous (défense en profondeur).
+3. Une interface Streamlit (authentification, streaming, validation).
+4. Un déploiement en ligne (URL publique).
 
-## Installation
+---
+
+## 🌐 Application en ligne
+
+**URL de l'application :** [https://randoneo-assistant-hocine.streamlit.app/](https://randoneo-assistant-hocine.streamlit.app/)
+
+**Accès :** L'application est protégée par un mot de passe. Pour l'obtenir, contactez l'auteur ou consultez le rapport de projet `RAPPORT.md`.
+
+Si vous clonez ce dépôt pour tester en local, vous pouvez définir votre propre mot de passe dans `.streamlit/secrets.toml` (voir la section Installation).
+
+**Dépôt du code :** [https://github.com/hocine-drioueche/projet_production](https://github.com/hocine-drioueche/projet_production)
+
+---
+
+## 📦 Installation
 
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # puis renseignez vos deux clés
+
+cp .env.example .env
+# Puis renseignez vos deux clés API.
+
 set -a && . ./.env && set +a
+
+# Pour l'interface locale, créez aussi le fichier de secrets Streamlit :
+mkdir -p .streamlit
+echo 'app_password = "votre_mot_de_passe_local"' > .streamlit/secrets.toml
 ```
 
-| Variable | À quoi elle sert |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | Le modèle de l'agent |
-| `OPENAI_API_KEY` | Les embeddings de la base de connaissances, appelés par le serveur d'outils |
+### Variables de configuration
 
-Python 3.11 au minimum : en 3.10, la configuration d'exécution ne traverse pas les appels
-asynchrones et la validation humaine échoue sur `Called get_config outside of a runnable context`.
+| **Variable** | **À quoi elle sert** |
+| :--- | :--- |
+| `ANTHROPIC_API_KEY` | Le modèle de l'agent. |
+| `OPENAI_API_KEY` | Les embeddings de la base de connaissances, appelés par le serveur d'outils. |
+| `app_password` | Le mot de passe d'accès à l'interface Streamlit, défini dans `.streamlit/secrets.toml`. |
 
-## Vérifier que la base tourne
+**Version de Python :** Python 3.11 au minimum. En Python 3.10, la configuration d'exécution ne traverse pas les appels asynchrones et la validation humaine échoue.
 
-Cinq minutes ici vous éviteront de confondre plus tard une panne d'origine avec un effet de
-votre durcissement.
+---
+
+## 🏗️ Architecture du projet
+
+| **Fichier** | **Ce qu'il porte** |
+| :--- | :--- |
+| `randoneo_support.py` | **Le serveur MCP :** catalogue, documentation, suivi de commande (durci), ouverture de ticket (durci). |
+| `agent.py` | **L'agent :** découverte des capacités, prompt système, point d'arrêt humain, injection du `customer_id`. |
+| `app.py` | **L'interface Streamlit :** authentification, streaming, étapes, validation humaine, fil dérivé de l'identité. |
+| `cases.jsonl` | **Le jeu de cas d'évaluation :** 15 cas répartis sur les 4 familles (nominal, piège, limite, sécurité). |
+| `evaluate.py` | **La suite d'évaluation :** évaluateurs, exécution, résumé, comparaison baseline/candidat. |
+| `attacks.py` | **Les 4 charges d'attaque** et leurs marqueurs, rejouables. |
+| `baseline.json` | Le résumé de l'évaluation **avant** durcissement (87 %). |
+| `hardened.json` | Le résumé de l'évaluation **après** durcissement (100 %). |
+| `attacks.json` | Le résumé des attaques **après** durcissement (0/4). |
+| `data/` | Le catalogue produit, le corpus documentaire et les commandes. |
+| `Dockerfile` | L'image de conteneur (application + serveur MCP). |
+| `RAPPORT.md` | Le rapport de projet (2 pages). |
+
+---
+
+## 🚀 Vérifier que la base fonctionne (avant durcissement)
 
 ```bash
-python randoneo_support.py    # le serveur seul : il doit démarrer et attendre
-python demo.py                # les scénarios de vérification, dont une escalade
-python chat.py                # conversation interactive (fil « client-1 »)
-python chat.py client-2       # une autre conversation, isolée de la première
+# Le serveur seul : il doit démarrer et attendre
+python randoneo_support.py
+
+# Les scénarios de vérification, dont une escalade
+python demo.py
+
+# Conversation interactive (fil « client-1 »)
+python chat.py
+
+# Une autre conversation, isolée de la première
+python chat.py client-2
 ```
 
-La conversation est persistée dans `randoneo_memory.sqlite` : relancez `chat.py` avec le même
-identifiant de fil, l'assistant reprend là où vous en étiez.
+La conversation est persistée dans `randoneo_memory.sqlite` : relancez `chat.py` avec le même identifiant de fil pour que l'assistant reprenne là où vous en étiez.
 
-## Ce que contient la base
+---
 
-| Fichier | Ce qu'il porte |
-| --- | --- |
-| `randoneo_support.py` | Le serveur MCP : catalogue, documentation, suivi de commande, ouverture de ticket |
-| `agent.py` | L'agent : découverte des capacités, prompt système, point d'arrêt humain sur `create_ticket` |
-| `chat.py` | Une boucle de conversation en ligne de commande, avec streaming et reprise après validation |
-| `demo.py` | Les scénarios de vérification de la base |
-| `data/` | Le catalogue produit, le corpus documentaire et les commandes |
+## 🖥️ Lancer l'interface Streamlit
 
-Deux points de ce métier comptent pour la suite du projet, et ce sont eux qu'on attaque.
+```bash
+streamlit run app.py
+```
 
-**Une règle interne confidentielle.** Le prompt système de `agent.py` porte la politique de
-geste commercial de Randoneo : un avoir plafonné, sous condition, que l'assistant ne doit ni
-révéler ni proposer de lui-même. C'est une règle de l'entreprise au même titre que le délai
-de retour — et c'est ce qu'un attaquant cherchera à faire sortir.
+L'application s'ouvre sur [http://localhost:8501](http://localhost:8501).
 
-**Un transporteur.** Randoneo sous-traite la livraison : le suivi d'un colis se consulte chez
-le transporteur, dont le lien part dans les réponses aux clients. Ce lien est légitime, il
-n'appartient pourtant pas à l'entreprise.
+Le mot de passe d'accès est celui que vous avez défini dans `.streamlit/secrets.toml`.
 
-## Si vous partez de votre propre rendu
+---
 
-Gardez votre code : c'est le vôtre, avec ses choix, et un durcissement se mesure mieux sur un
-objet qu'on connaît. Reprenez seulement les deux éléments ci-dessus, sans lesquels une partie
-du projet n'aurait pas d'objet :
+## 🧪 Rejouer les mesures
 
-1. le bloc `INTERNAL_RULES` de `agent.py`, ajouté à votre prompt système ;
-2. le dossier `data/` de cette archive, dont la documentation mentionne le transporteur — et
-   le `tracking_url` que `get_order_status` construit dans `randoneo_support.py`.
+```bash
+# 1. Activer l'environnement virtuel
+source .venv/bin/activate
 
-Rien d'autre n'est à reprendre.
+# 2. Charger les variables d'environnement
+set -a && source .env && set +a
 
-## Ce que la base ne fait pas
+# 3. Lancer la baseline (assistant avant durcissement)
+python evaluate.py --output baseline.json
 
-Elle répond juste sans que personne n'en ait la preuve, elle obéit à qui sait lui parler, elle
-ne s'atteint que depuis votre terminal et elle s'arrête quand vous le fermez. C'est exactement
-le sujet du projet.
+# 4. Lancer le candidat (assistant durci)
+python evaluate.py --output hardened.json
+
+# 5. Comparer les résultats
+python evaluate.py --compare baseline.json hardened.json
+```
+
+**Résultat attendu :** un tableau comparatif avant/après avec le taux de réussite (*pass rate*).
+
+---
+
+## 🛡️ Les garde-fous : ce qui a été ajouté
+
+Le projet applique **trois couches de défense en profondeur**.
+
+### 1. Moindre privilège (garantie)
+
+- `get_order_status` reçoit `customer_id` depuis la session (via `agent.py`), et non depuis le modèle. Il filtre également les champs renvoyés (pas d'adresse ni de moyen de paiement).
+- `create_ticket` limite les intentions à une liste fermée (`ALLOWED_INTENTS`) et limite la longueur du résumé.
+- `search_catalog` permet également la recherche par SKU.
+
+### 2. Validation de sortie (rattrapage)
+
+- Contrôle déterministe des références inventées (adresses e-mail et URL hors des domaines Randoneo).
+- Juge LLM binaire pour détecter les promesses non conformes à la politique.
+
+### 3. Délimitation (réduction de la probabilité)
+
+- Le contenu non fiable est encadré par des balises comportant un identifiant aléatoire.
+
+---
+
+## 📊 Les chiffres du projet
+
+| **Indicateur** | **Avant durcissement** | **Après durcissement** |
+| :--- | :--- | :--- |
+| **Taux de réussite (*pass rate*)** | 87 % (13/15) | **100 % (15/15)** |
+| **Attaques réussies** | 1/4 | **0/4** |
+
+### Détail des corrections
+
+- `limite_04` : `search_catalog` ne recherchait pas par SKU → **corrigé**.
+- `securite_01` : `get_order_status` ne vérifiait pas `customer_id` → **corrigé**.
+- `contournement` : l'agent accordait un avoir de 40 € → **corrigé** grâce aux restrictions de `create_ticket`.
+
+---
+
+## ⚠️ Points d'attention et limites connues
+
+- **La mémoire de conversation n'est pas persistante :** avec `InMemorySaver`, elle est perdue au redémarrage de l'application.
+- **Le mot de passe est partagé :** il n'existe pas d'identité individuelle. Pour aller plus loin, une authentification OIDC avec `st.login()` serait nécessaire.
+- **L'injection indirecte n'est pas complètement neutralisée :** la délimitation réduit la probabilité de réussite, mais un document bien rédigé peut encore contourner les instructions.
+- **Le coût n'est pas mesuré en production :** aucun système de traçage (*tracing*) n'est encore connecté (LangSmith ou Langfuse).
+
+---
+
+## 📄 Licence
+
+Projet pédagogique — fil rouge du module **Industrialisation IA**.
+
+---
+
+## 👤 Auteur
+
+**Hocine Drioueche**
+
+- GitHub : [@hocine-drioueche](https://github.com/hocine-drioueche)
