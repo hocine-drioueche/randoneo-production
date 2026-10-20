@@ -30,6 +30,10 @@ python evaluate.py --output baseline.json
 python evaluate.py --output hardened.json
 python evaluate.py --compare baseline.json hardened.json
 
+```
+
+
+
 
 **Durée approximative d'une exécution :** 3-5 minutes pour 15 cas (chaque cas = 1-3 appels LLM).  
 **Coût approximatif d'une exécution :** ~0,05 $ pour 15 cas (claude-haiku-4-5).
