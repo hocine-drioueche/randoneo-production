@@ -64,10 +64,19 @@ echo 'app_password = "votre_mot_de_passe_local"' > .streamlit/secrets.toml
 | `hardened.json` | Le résumé de l'évaluation **après** durcissement (100 %). |
 | `attacks.json` | Le résumé des attaques **après** durcissement (0/4). |
 | `data/` | Le catalogue produit, le corpus documentaire et les commandes. |
-| `Dockerfile` | L'image de conteneur (application + serveur MCP). |
+| `Dockerfile` | L'image de conteneur (application + serveur MCP) : utilisateur non-root (appuser, uid    1000), HEALTHCHECK, exposition sur 0.0.0.0:7860. |
 | `RAPPORT.md` | Le rapport de projet (2 pages). |
 
 ---
+
+### 🐳 Le conteneur, et pourquoi il existe
+
+L'application est conteneurisable : le `Dockerfile` installe les dépendances, copie le code, crée un utilisateur non-root (`appuser`, uid 1000) et démarre Streamlit sur `0.0.0.0:7860`. Un `HEALTHCHECK` vérifie que l'application répond, et le `.dockerignore` exclut les secrets (`.env`, `.streamlit/`), les environnements virtuels et la documentation.
+
+**Streamlit Community Cloud n'exécute pas cette image** — il clone le dépôt et installe depuis `requirements.txt`. Le conteneur reste néanmoins ce qui rend l'application portable vers un autre hébergeur (Cloud Run, App Runner, Container Apps…) : le déménagement coûte un `docker push`.
+
+
+
 
 ## 🚀 Vérifier que la base fonctionne (avant durcissement)
 
