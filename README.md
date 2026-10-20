@@ -52,6 +52,11 @@ echo 'app_password = "votre_mot_de_passe_local"' > .streamlit/secrets.toml
 
 ## 🏗️ Architecture du projet
 
+Vue d'ensemble de l'architecture et des couches d'industrialisation autour du noyau existant :
+
+![Architecture globale de l'assistant Randoneo](docs/architecture.png)
+
+
 | **Fichier** | **Ce qu'il porte** |
 | :--- | :--- |
 | `randoneo_support.py` | **Le serveur MCP :** catalogue, documentation, suivi de commande (durci), ouverture de ticket (durci). |
@@ -68,6 +73,14 @@ echo 'app_password = "votre_mot_de_passe_local"' > .streamlit/secrets.toml
 | `RAPPORT.md` | Le rapport de projet (2 pages). |
 
 ---
+
+
+**Détail technique des flux :**
+Pour voir précisément comment les fichiers interagissent (qui appelle qui, où sont stockées les données) :
+
+![Diagramme technique détaillé](docs/diagram.png)
+
+
 
 ### 🐳 Le conteneur, et pourquoi il existe
 
