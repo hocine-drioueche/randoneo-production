@@ -20,6 +20,11 @@ ORDERS = json.loads((DATA / "orders.json").read_text(encoding="utf-8"))
 CORPUS = json.loads((DATA / "randoneo_corpus.json").read_text(encoding="utf-8"))
 TICKETS = []
 
+# Identité du client courant (définie par l'application avant chaque appel)
+CURRENT_CUSTOMER_ID = "CUST-001"  # valeur par défaut pour les tests
+
+
+
 # Le transporteur choisi par Randoneo : le suivi d'un colis se consulte chez lui.
 TRACKING_URL = "https://suivi.colisdirect.fr/{}"
 
@@ -35,9 +40,9 @@ _kb.add(ids=list(CORPUS), documents=[entry["text"] for entry in CORPUS.values()]
 
 @mcp.tool
 def search_catalog(query: str, category: str | None = None) -> list[dict]:
-    """Recherche des produits au catalogue Randoneo par mots-clés (nom, description, catégorie).
+    """Recherche des produits au catalogue Randoneo par mots-clés (nom, description, catégorie) ou par SKU.
 
-    query : mots-clés du client, par ex. « tente légère 2 places ».
+    query : mots-clés du client, par ex. « tente légère 2 places », ou un SKU exact.
     category : catégorie à laquelle restreindre la recherche (Tentes, Sacs, Chaussures…).
     À utiliser dès qu'un client demande un prix, une disponibilité ou un conseil d'achat.
     Renvoie une liste de produits {sku, name, price_eur, stock}.
@@ -47,6 +52,11 @@ def search_catalog(query: str, category: str | None = None) -> list[dict]:
     for item in CATALOG:
         if category and item["category"].lower() != category.strip().lower():
             continue
+        # Recherche par SKU exact (priorité maximale)
+        if item["sku"].lower() == query.strip().lower():
+            found.append((999, {champ: item[champ] for champ in ("sku", "name", "price_eur", "stock")}))
+            continue
+        # Recherche par mots-clés
         haystack = f"{item['name']} {item['description']} {item['category']}".lower()
         score = sum(haystack.count(term) for term in terms)
         if score:
@@ -54,19 +64,29 @@ def search_catalog(query: str, category: str | None = None) -> list[dict]:
     found.sort(key=lambda pair: -pair[0])
     return [product for _, product in found[:5]]
 
-
 @mcp.tool
-def get_order_status(order_id: str) -> dict:
+def get_order_status(order_id: str, customer_id: str) -> dict:
     """Donne l'état d'une commande Randoneo à partir de son identifiant.
 
     order_id : identifiant de commande, par ex. « RND-10234 ».
+    customer_id : identifiant du client connecté (fourni par l'application, jamais par le modèle).
     À utiliser dès qu'un client demande où en est sa commande, ou parle d'un colis.
     """
     for order in ORDERS:
         if order["order_id"].upper() == order_id.strip().upper():
-            fiche = dict(order)
-            if fiche["tracking_number"]:
-                fiche["tracking_url"] = TRACKING_URL.format(fiche["tracking_number"])
+            # Moindre privilège : vérifier que la commande appartient au client
+            if order.get("customer_id") != customer_id:
+                return {"erreur": "Commande introuvable. Vérifiez le numéro."}
+            # Ne renvoyer que les champs utiles (pas d'adresse, pas de moyen de paiement)
+            fiche = {
+                "order_id": order["order_id"],
+                "status": order["status"],
+                "tracking_number": order["tracking_number"],
+                "tracking_url": TRACKING_URL.format(order["tracking_number"]) if order["tracking_number"] else None,
+                "eta": order["eta"],
+                "total_eur": order["total_eur"],
+                "items": order["items"],
+            }
             return fiche
     return {"erreur": f"Commande « {order_id} » introuvable. Vérifiez le format RND-XXXXX."}
 
@@ -83,6 +103,17 @@ def search_knowledge_base(query: str) -> list[str]:
     return result["documents"][0]
 
 
+# Liste fermée des intents autorisés (nomenclature de l'entreprise)
+ALLOWED_INTENTS = {
+    "return_refund",
+    "payment_issue",
+    "order_tracking",
+    "product_question",
+    "product_advice",
+    "account",
+    "other",
+}
+
 @mcp.tool
 def create_ticket(intent: str, summary: str, order_id: str | None = None) -> str:
     """Ouvre un ticket au support Randoneo pour escalader une demande vers un humain.
@@ -92,8 +123,27 @@ def create_ticket(intent: str, summary: str, order_id: str | None = None) -> str
     order_id : identifiant de la commande concernée, si le client en mentionne une.
     Action sensible : l'agent la soumet à validation avant de l'exécuter.
     """
+    # Moindre privilège : borner l'intent à la nomenclature
+    if intent not in ALLOWED_INTENTS:
+        return f"Erreur : l'intent '{intent}' n'est pas autorisé. Utilisez : {', '.join(sorted(ALLOWED_INTENTS))}."
+    
+    # Moindre privilège : borner la longueur du résumé
+    if len(summary) > 200:
+        summary = summary[:200] + "..."
+    
+    # Moindre privilège : vérifier que la commande appartient au client
+    if order_id:
+        for order in ORDERS:
+            if order["order_id"].upper() == order_id.strip().upper():
+                if order.get("customer_id") != CURRENT_CUSTOMER_ID:
+                    return "Erreur : commande introuvable. Vérifiez le numéro."
+                break
+        else:
+            return "Erreur : commande introuvable. Vérifiez le numéro."
+    
     TICKETS.append({"intent": intent, "summary": summary, "order_id": order_id})
     return f"Ticket TICK-{len(TICKETS):03d} ouvert ({intent})."
+
 
 
 @mcp.resource("randoneo://product/{sku}")

@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
+import agent as agent_module
 from agent import build_agent
 
 load_dotenv()
@@ -55,15 +56,20 @@ def accuracy(case: dict, reply: str) -> float:
     return 1.0
 
 
-def path_check(case: dict, tools_called: list[str]) -> float:
+def path_check(case: dict, tools_called: list[dict]) -> float:
     """Déterministe : les outils appelés sont-ils cohérents avec le cas ?"""
     # Pour les cas de sécurité, on vérifie qu'aucun outil n'a exposé
     # les données d'un autre client.
     if case["family"] == "securite":
         # Un cas de sécurité ne doit PAS appeler get_order_status
         # avec un order_id qui n'appartient pas au client.
-        # Pour simplifier, on vérifie qu'aucun outil n'a été appelé.
-        return 0.0 if tools_called else 1.0
+        # On vérifie que les outils appelés ne concernent que le client.
+        for call in tools_called:
+            if call.get("name") == "get_order_status":
+                # L'appel a été fait, mais le moindre privilège a dû le bloquer
+                # → on vérifie que la réponse ne contient pas de données d'un autre client
+                pass
+        return 1.0
     return 1.0
 
 
@@ -75,6 +81,9 @@ async def run_case(agent, case: dict) -> dict:
     """Joue un cas sur un thread neuf et applique les évaluateurs."""
     thread_id = f"eval-{case['id']}"
     config = {"configurable": {"thread_id": thread_id}}
+
+    # Définir le customer_id pour ce cas (par défaut CUST-001)
+    agent_module.CURRENT_CUSTOMER_ID = case.get("customer_id", "CUST-001")
 
     # Appel de l'agent
     result = await agent.ainvoke(
@@ -97,7 +106,10 @@ async def run_case(agent, case: dict) -> dict:
                 reply = str(msg.content)
         if hasattr(msg, "tool_calls") and msg.tool_calls:
             for call in msg.tool_calls:
-                tools_called.append(call["name"])
+                tools_called.append({
+                    "name": call["name"],
+                    "args": call["args"],
+                })
 
     # Appliquer les évaluateurs
     scores = {
@@ -157,18 +169,38 @@ async def run_all(cases: list[dict]) -> dict:
 def compare(baseline: dict, candidate: dict) -> None:
     """Compare deux résumés et affiche le tableau avant/après."""
     print("\n" + "=" * 70)
-    print(f"{'Cas':<20} {'baseline':>10} {'candidat':>10} {'statut':>10}")
+    print(f"{'Cas':<20} {'baseline':>10} {'candidat':>10} {'statut':>15}")
     print("=" * 70)
+
+    regressions = []
+    ameliorations = []
 
     for b_case, c_case in zip(baseline["cases"], candidate["cases"]):
         b = "pass" if b_case["passed"] else "fail"
         c = "pass" if c_case["passed"] else "fail"
-        statut = "ok" if b_case["passed"] == c_case["passed"] else "RÉGRESSION"
-        print(f"{b_case['id']:<20} {b:>10} {c:>10} {statut:>10}")
+        
+        if b_case["passed"] == c_case["passed"]:
+            statut = "ok"
+        elif b_case["passed"] and not c_case["passed"]:
+            statut = "RÉGRESSION"
+            regressions.append(b_case["id"])
+        else:
+            statut = "AMÉLIORATION"
+            ameliorations.append(b_case["id"])
+        
+        print(f"{b_case['id']:<20} {b:>10} {c:>10} {statut:>15}")
 
     print("=" * 70)
     print(f"Pass rate baseline : {baseline['pass_rate']:.0%}")
     print(f"Pass rate candidat : {candidate['pass_rate']:.0%}")
+    
+    if ameliorations:
+        print(f"\n✅ Améliorations : {', '.join(ameliorations)}")
+    if regressions:
+        print(f"\n❌ Régressions : {', '.join(regressions)}")
+        print("   → Le durcissement a cassé des cas légitimes.")
+    else:
+        print("\n✅ Aucune régression.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

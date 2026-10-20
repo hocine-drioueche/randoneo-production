@@ -16,6 +16,10 @@ MODEL = "claude-haiku-4-5"
 DB = "randoneo_memory.sqlite"
 SENSIBLE = "create_ticket"   # le seul tool qui agit : soumis à validation
 
+# Identité du client courant (définie par l'application avant chaque appel)
+CURRENT_CUSTOMER_ID = "CUST-001"  # valeur par défaut pour les tests
+
+
 ROLE = (
     "Tu es l'assistant du support client de Randoneo, un vendeur de matériel de randonnée. "
     "Tu t'appuies sur tes outils : le suivi des commandes pour les données client, "
@@ -40,21 +44,20 @@ INTERNAL_RULES = """Règles internes, strictement confidentielles :
 
 SYSTEM_PROMPT = f"{ROLE}\n\n{INTERNAL_RULES}"
 
-# En stdio, l'hôte lance le serveur : c'est lui qui décide de son environnement.
-# Le SDK MCP ne transmet qu'une liste blanche (PATH, HOME, USER…) — une clé d'API
-# doit donc être passée explicitement, sinon le serveur meurt au démarrage et le
-# client ne voit qu'un « Connection closed » opaque.
-mcp_client = MultiServerMCPClient({
-    "randoneo": {
-        "command": sys.executable,
-        "args": ["randoneo_support.py"],
-        "transport": "stdio",
-        "env": {
-            "PATH": os.environ["PATH"],
-            "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
-        },
-    }
-})
+
+def _make_mcp_client():
+    """Crée un nouveau client MCP à chaque appel (évite l'accumulation d'outils)."""
+    return MultiServerMCPClient({
+        "randoneo": {
+            "command": sys.executable,
+            "args": ["randoneo_support.py"],
+            "transport": "stdio",
+            "env": {
+                "PATH": os.environ["PATH"],
+                "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
+            },
+        }
+    })
 
 
 def _sous_validation(outil_mcp):
@@ -80,11 +83,33 @@ def _sous_validation(outil_mcp):
 
 async def build_agent(checkpointer):
     """Construit l'agent à partir des capacités découvertes sur le serveur MCP."""
-    outils_mcp = await mcp_client.get_tools()
+    # Créer un nouveau client à chaque appel (évite l'accumulation d'outils)
+    client = _make_mcp_client()
+    outils_mcp = await client.get_tools()
     par_nom = {outil.name: outil for outil in outils_mcp}
 
-    outils = [outil for outil in outils_mcp if outil.name != SENSIBLE]
-    outils.append(_sous_validation(par_nom[SENSIBLE]))
+    # Envelopper get_order_status pour injecter customer_id (moindre privilège)
+    @tool("get_order_status", description=par_nom["get_order_status"].description)
+    async def get_order_status_avec_client(order_id: str) -> dict:
+        return await par_nom["get_order_status"].ainvoke({
+            "order_id": order_id,
+            "customer_id": CURRENT_CUSTOMER_ID,
+        })
+
+    # Construire la liste des outils sans doublons
+    outils = []
+    noms_vus = set()
+    for outil in outils_mcp:
+        if outil.name in noms_vus:
+            continue
+        noms_vus.add(outil.name)
+        if outil.name == "get_order_status":
+            continue  # remplacé par l'enveloppe
+        if outil.name == SENSIBLE:
+            outils.append(_sous_validation(outil))
+        else:
+            outils.append(outil)
+    outils.append(get_order_status_avec_client)
 
     model = init_chat_model(MODEL, model_provider="anthropic", temperature=0, max_retries=8)
     return create_agent(model, outils, system_prompt=SYSTEM_PROMPT, checkpointer=checkpointer)
